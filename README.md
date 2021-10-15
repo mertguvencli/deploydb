@@ -51,7 +51,7 @@ RepoGenerator("config.json", "path-to-export").run()
 ```
 root-project-folder
 │
-└───DataCenter-X
+└───Server-X
     │    └───DB-001
     │    │   └───Tables
     │    │   └───Views
