@@ -35,7 +35,7 @@ Deploy your database objects automatically when the git branch is updated.
             "server_alias": "Staging",
             "user": "your-db-user",
             "passw": "your-password"
-        },
+        }
     ]
 }
 ```

@@ -1,7 +1,7 @@
 """Console script for deploydb."""
 import os
 
-from deploydb import Base
+from listener import Base
 from model import Server
 from database import Database
 from utils import FONT, QUERIES, SUB_FOLDERS, save_csv

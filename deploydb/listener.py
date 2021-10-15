@@ -1,4 +1,3 @@
-"""Top-level package for deploydb."""
 
 from datetime import datetime
 import os
