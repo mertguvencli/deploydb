@@ -19,7 +19,7 @@ Deploy your database objects automatically when the git branch is updated.
 |`local_path`|where the local repository will be located|
 |`https_url` or `ssh_url`|*https or ssh url is required*|
 |`target_branch`|to trigger branch name|
-|`server`|a list of server credentials|
+|`servers`|a list of server credentials|
 
 `config.json`
 ```json
