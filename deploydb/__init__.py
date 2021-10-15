@@ -6,6 +6,7 @@ __version__ = '0.1.4'
 import os
 import sys
 from datetime import datetime
+import time
 import json
 import csv
 from contextlib import contextmanager
@@ -529,40 +530,51 @@ class Listener(Base):
         db_name = x[2]
         return server, db_name
 
-    def sync(self):
+    def sync(self, loop=False, sleep=5):
+        """Handles changes and deploy to your server automatically.
+
+        Args:
+            loop (bool, optional): creates infinite loop to handle changes. Defaults to False.
+            sleep (int, optional): determines how many seconds it will run. Defaults to 5.
+        """
         if not os.path.exists(self._config.local_path):
             print(f"Initial pulling branch: {self._config.target_branch}")
             os.mkdir(self._config.local_path)
             self._pull()
 
-        print("Checking changes...")
-        repo = Repo(self._config.local_path)
-        origin = repo.remotes.origin
-        origin._pull()
+        def changes():
+            print("Checking changes...", datetime.now())
+            repo = Repo(self._config.local_path)
+            origin = repo.remotes.origin
+            origin._pull()
 
-        source_hash = _last_commit_hash(path=self.changelog_path)
-        target_hash = repo.head.commit.hexsha
+            source_hash = _last_commit_hash(path=self.changelog_path)
+            target_hash = repo.head.commit.hexsha
 
-        failure = []
-        if source_hash != target_hash:
-            print("Change was detected, deploying...")
-            source_commit = repo.commit(source_hash)
-            target_commit = repo.commit(target_hash)
-            git_diff = source_commit.diff(target_commit)
+            failure = []
+            if source_hash != target_hash:
+                print("Changes detected...")
+                source_commit = repo.commit(source_hash)
+                target_commit = repo.commit(target_hash)
+                git_diff = source_commit.diff(target_commit)
 
-            changed_files = [f.a_path for f in git_diff]
-            for item in changed_files:
-                server, db_name = self._extract_creds(item)
-                try:
-                    self._run_cmd(server, db_name, item)
-                except:  # noqa
-                    failure.append(item)
+                changed_files = [f.a_path for f in git_diff]
+                for item in changed_files:
+                    print(item)
+                    server, db_name = self._extract_creds(item)
+                    try:
+                        self._run_cmd(server, db_name, item)
+                    except:  # noqa
+                        failure.append(item)
 
-            _set_commit_log(hexsha=target_hash, path=self.changelog_path)
-        else:
-            print("There is no new target.")
+                _set_commit_log(hexsha=target_hash, path=self.changelog_path)
 
-        if failure:
-            columns = ['commit_hexsha', 'time', 'error']
-            rows = [[target_hash, datetime.now(), str(x)] for x in failure]
-            _save_csv(self.err_path, columns, rows)
+            if failure:
+                columns = ['commit_hexsha', 'time', 'error']
+                rows = [[target_hash, datetime.now(), str(x)] for x in failure]
+                _save_csv(self.err_path, columns, rows)
+
+        changes()
+        while loop:
+            changes()
+            time.sleep(sleep)

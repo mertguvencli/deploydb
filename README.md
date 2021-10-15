@@ -7,52 +7,64 @@ Deploy your database objects automatically when the git branch is updated.
 * Customizable 🔧
 
 
-## Getting started..
-1- Install the latest package. 
+## Installation
+Install the latest package. `pip install deploydb`
 
-`pip install deploydb`
 
-2- Add Configurations ( *json file or `dict`* )
+## Usage
+1- Create configuration file ( *json file or `dict`* )
 
 |Property|Description|
 |------------|-----------|
 |`local_path`|where the local repository will be located|
-|`https_url` or `ssh_url`|*https or ssh url is required*|
-|`target_branch`|to trigger branch name|
+|`https_url` or `ssh_url`|address to be listen|
+|`target_branch`|branch to handle changes|
 |`servers`|a list of server credentials|
 
-`config.json`
+Example: `config.json`
 ```json
 {
-    "local_path": "E:\\deployment",
+    "local_path": "",
     "https_url": "",
-    "ssh_url": "git@github.com:****/****.git",
-    "target_branch": "main",
+    "ssh_url": "",
+    "target_branch": "",
     "servers": [
         {
             "driver": "ODBC Driver 17 for SQL Server",
-            "server": "127.0.0.1",
+            "server": "server-address-or-instance-name",
             "server_alias": "Staging",
-            "user": "your-db-user",
+            "user": "your-username",
             "passw": "your-password"
         }
     ]
 }
 ```
 
-3- Export your database objects then `push / upload` the exported files to your repository.
+2- Listener will listen every changes with `sync` method.
+
 ```python
-from deploydb.repo_generator import RepoGenerator
+from deploydb import Listener
 
-RepoGenerator("config.json", "path-to-export").run()
+deploy = Listener('config.json')
+deploy.sync(loop=True)
 ```
-**Repo-Generator** will extract objects structure as below.
+
+
+### Repo Generator
+If you does not have any existing repository. You can easily export your database objects then create your repository.
+```python
+from deploydb import RepoGenerator
+
+generator = RepoGenerator(config="config.json", export_path="path-to-export")
+generator.run()
+```
+`RepoGenerator` will extract objects structure as below.
 
 ```
-root-project-folder
+path-to-export
 │
 └───Server-X
-    │    └───DB-001
+    │    └───DB-X
     │    │   └───Tables
     │    │   └───Views
     │    │   └───Functions
@@ -66,11 +78,4 @@ root-project-folder
     N-Server
 ```
 
-4- Pull the target branch from remote and initiate `sync`.
-
-```python
-from deploydb import Listener
-
-deploy = Listener('config.json')
-deploy.sync()
-```
+*(TODO) Creating a Windows Service*
