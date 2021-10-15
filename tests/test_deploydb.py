@@ -2,10 +2,7 @@
 
 """Tests for `deploydb` package."""
 
-
 import unittest
-
-from deploydb import deploydb
 
 
 class TestDeploydb(unittest.TestCase):

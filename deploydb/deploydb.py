@@ -21,7 +21,7 @@ class Base:
     def _is_file_path(self):
         try:
             return os.path.exists(self.config)
-        except:
+        except:  # noqa
             return False
 
     def _handle_config(self) -> str:
@@ -106,7 +106,7 @@ class Listener(Base):
         if not os.path.exists(self._config.local_path):
             os.mkdir(self._config.local_path)
             self.pull()
-        
+
         repo = Repo(self._config.local_path)
         origin = repo.remotes.origin
         origin.pull()
@@ -126,13 +126,12 @@ class Listener(Base):
                 server, db_name = self.extract_creds(item)
                 try:
                     self._run_cmd(server, db_name, item)
-                except:
+                except:  # noqa
                     failure.append(item)
 
             set_commit_log(target_hash)
         else:
             print("There is no new target.")
-
 
         if failure:
             columns = ['commit_hexsha', 'time', 'error']

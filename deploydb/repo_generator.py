@@ -1,6 +1,4 @@
 """Console script for deploydb."""
-import argparse
-import sys
 import os
 
 from deploydb import Base
@@ -41,11 +39,11 @@ class RepoGenerator(Base):
         _db = Database(creds=_server)
         with _db.connect(db_name) as db:
             tables = db.execute(QUERIES["TABLES"]).fetchall()
-            print(f'{FONT["HEADER"]}Current DB: {db_name} {len(tables)} tables found. Generating script... {FONT["END"]}')
+            print(f'{FONT["HEADER"]}Current DB: {db_name} {len(tables)} tables found. Generating script... {FONT["END"]}')  # noqa
 
             for index, table in enumerate(tables):
                 try:
-                    print(f'--->{index+1}/{len(tables)} {table.TABLE_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')
+                    print(f'--->{index+1}/{len(tables)} {table.TABLE_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')  # noqa
                     script = db.execute(
                         QUERIES["CREATE_TABLE"],
                         table.SCHEMA_NAME,
@@ -56,7 +54,7 @@ class RepoGenerator(Base):
                     with open(os.path.join(project_path, "Tables", f'{safe_file}.sql'), 'w') as f:
                         f.write(str(script))
                 except Exception as ex:
-                    print(f'{FONT["FAIL"]}--->{index+1}/{len(tables)} {table.TABLE_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')
+                    print(f'{FONT["FAIL"]}--->{index+1}/{len(tables)} {table.TABLE_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')  # noqa
                     self._failure.append([_server.server, db_name, "Tables", table.TABLE_NAME, str(ex)])
 
             objects = db.execute(QUERIES["OBJECTS"]).fetchall()
@@ -66,7 +64,7 @@ class RepoGenerator(Base):
                     with open(os.path.join(project_path, item.SUB_FOLDER, f'{item.OBJECT_NAME}.sql'), 'w') as f:
                         f.write(str(item.SQL))
                 except Exception as ex:
-                    print(f'{FONT["FAIL"]}--->{index+1}/{len(objects)} {item.OBJECT_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')
+                    print(f'{FONT["FAIL"]}--->{index+1}/{len(objects)} {item.OBJECT_NAME} {FONT["SUCCESS"]}({db_name}){FONT["END"]}')  # noqa
                     self._failure.append([_server.server, db_name, item.SUB_FOLDER, item.OBJECT_NAME, str(ex)])
 
     def generate(self):
@@ -75,7 +73,7 @@ class RepoGenerator(Base):
             with _db.connect("master") as db:
                 for item in db.execute(QUERIES["DATABASES"]).fetchall():
                     self.init_project(server, item.DB_NAME)
-    
+
     def run(self):
         self.generate()
         if self._failure:
@@ -109,7 +107,6 @@ class RepoGenerator(Base):
 #     )
 
 #     args = vars(parser.parse_args())
-    
 #     config = args.get('config')
 #     export = args.get('export')
 

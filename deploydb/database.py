@@ -22,7 +22,7 @@ class Database:
             str=self._conn_str,
             autocommit=True
         )
-        connection.timeout = 5 # default timeout 5 sec.
+        connection.timeout = 5  # default timeout 5 sec.
         cursor = connection.cursor()
         try:
             cursor.execute(f"USE {db_name};")

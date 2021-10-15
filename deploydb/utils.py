@@ -26,19 +26,19 @@ def last_commit_hash(path='changelog.csv'):
         with open(path, 'r') as f:
             logs = [line for line in csv.reader(f)]
     if len(logs) > 1:
-        return logs[-1][0] # commit_id
+        return logs[-1][0]  # commit_id
     return None
 
 
 FONT = dict(
-    HEADER = '\033[95m',
-    PRIMARY = '\033[94m',
-    SUCCESS = '\033[92m',
-    WARNING = '\033[93m',
-    FAIL = '\033[91m',
-    BOLD = '\033[1m',
-    UNDERLINE = '\033[4m',
-    END = '\033[0m',
+    HEADER='\033[95m',
+    PRIMARY='\033[94m',
+    SUCCESS='\033[92m',
+    WARNING='\033[93m',
+    FAIL='\033[91m',
+    BOLD='\033[1m',
+    UNDERLINE='\033[4m',
+    END='\033[0m',
 )
 SUB_FOLDERS = [
     'Tables',
@@ -55,14 +55,14 @@ QUERIES = dict(
         SELECT name AS DB_NAME
         FROM sys.databases
         WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
-    """,
+    """,  # noqa
     TABLES = """
         SELECT
             SCHEMA_NAME = schemas.name
         ,   TABLE_NAME  = tables.name
         FROM sys.tables, sys.schemas
         WHERE tables.schema_id = schemas.schema_id
-    """,
+    """, # noqa
     CREATE_TABLE = """
         DECLARE
             @schema_name    NVARCHAR(200) = ?
@@ -211,7 +211,7 @@ QUERIES = dict(
             ), '')
 
         SELECT @SQL AS SQL
-    """,
+    """,  # noqa
     OBJECTS = """
         SELECT
             SUB_FOLDER		= CASE all_objects.type
@@ -241,5 +241,5 @@ QUERIES = dict(
                 WHEN 'TR' THEN 6	-- SQL_TRIGGER
             END
         ,	all_objects.object_id
-    """
+    """  # noqa
 )
