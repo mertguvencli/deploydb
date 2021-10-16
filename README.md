@@ -1,4 +1,3 @@
-![deploydb](/assets/deploydb-logos_black.png)
 # deploydb
 
 Deploy your database objects automatically when the git branch is updated.
