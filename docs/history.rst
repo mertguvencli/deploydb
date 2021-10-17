@@ -28,3 +28,5 @@ History
 0.1.9 (2021-10-17)
 
 * newline fixed on csv file.
+
+0.2.0 (2021-10-17)

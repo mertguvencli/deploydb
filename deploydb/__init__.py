@@ -1,7 +1,7 @@
 """Top-level package for deploydb."""
 __author__ = """Mert Güvençli"""
 __email__ = 'guvenclimert@gmail.com'
-__version__ = '0.1.9'
+__version__ = '0.2.0'
 
 import os
 import sys
@@ -515,7 +515,7 @@ class Listener(Base):
         cmd = self._prep_cmd(file)
         creds = None
         for x in self._config.servers:
-            if not creds and x.server_server_alias == server:
+            if not creds and x.server_alias == server:
                 creds = x
             if not creds and x.server == server:
                 creds = x
@@ -548,8 +548,8 @@ class Listener(Base):
 
     def _extract_creds(self, changed_file):
         x = changed_file.split('/')
-        server = x[1]
-        db_name = x[2]
+        server = x[0]
+        db_name = x[1]
         return server, db_name
 
     def sync(self, loop=False, sleep=5):
@@ -582,18 +582,18 @@ class Listener(Base):
 
                 changed_files = [f.a_path for f in git_diff]
                 for item in changed_files:
-                    print(item)
+                    print("Changed file:", item)
                     server, db_name = self._extract_creds(item)
                     try:
                         self._run_cmd(server, db_name, item)
-                    except:  # noqa
-                        failure.append(item)
+                    except Exception as ex:
+                        failure.append([item, str(ex)])
 
                 _set_commit_log(hexsha=target_hash, path=self.changelog_path)
 
             if failure:
-                columns = ['commit_hexsha', 'time', 'error']
-                rows = [[target_hash, datetime.now(), str(x)] for x in failure]
+                columns = ['commit_hexsha', 'time', 'object', 'error']
+                rows = [[target_hash, datetime.now(), x[0], x[1]] for x in failure]
                 _save_csv(self.err_path, columns, rows)
 
         changes()
