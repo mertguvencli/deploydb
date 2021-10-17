@@ -55,8 +55,12 @@ If you does not have any existing repository. You can easily export your databas
 ```python
 from deploydb import RepoGenerator
 
-generator = RepoGenerator(config="config.json", export_path="path-to-export")
-generator.run()
+scripter = RepoGenerator(
+    config="config.json",
+    export_path="path-to-export",
+    databases=[]  # Default takes all databases from the given credential if not specified.
+)
+scripter.run()
 ```
 `RepoGenerator` will extract objects structure as below.
 
@@ -78,4 +82,12 @@ path-to-export
     N-Server
 ```
 
-*(TODO) Creating a Windows Service*
+## TODO
+
+* Creating Services for Continuous Integration
+    * Windows Service
+    * Linux Systemd Service
+
+* Getting Notifications
+    * Microsoft Teams Webhook Integration
+    * Slack Webhook Integration

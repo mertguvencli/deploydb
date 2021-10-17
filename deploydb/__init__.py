@@ -336,17 +336,34 @@ _QUERIES = dict(
 
 
 class RepoGenerator(Base):
-    """Generator will create all the database object that you need."""
-    def __init__(self, config, export_path, err_file_name="errors.csv") -> None:
-        """
+    """It will create your database object's script that you need.
 
-        Args:
-            config (Any): config file or a `dict`.
-            export_path (str): where the exported files locate
-            err_file_name (str, optional): where the errors locate. Defaults to "errors.csv".
-        """
+    Args:
+        config (Any): config file or a `dict`.
+        export_path (str): where the exported files locate
+        databases (list, optional): default takes all databases from the given credential.
+        err_file_name (str, optional): where the errors locate. Defaults to "errors.csv".
+    Example:
+        from deploydb import RepoGenerator
+
+        scripter = RepoGenerator(
+            config="config.json",
+            export_path="path-to-export",
+            databases=['MyDbName']
+        )
+        scripter.run()
+    """
+    def __init__(
+        self,
+        *,
+        config,
+        export_path,
+        databases=[],
+        err_file_name="errors.csv"
+    ) -> None:
         super().__init__(config)
         self.path = export_path
+        self.databases = databases
         self.err_file_name = err_file_name
         self._failure = []
 
@@ -413,10 +430,11 @@ class RepoGenerator(Base):
         for index, server in enumerate(self._config.servers, start=1):
             _db = Database(server)
             with _db.connect("master") as db:
-                databases = db.execute(_QUERIES["DATABASES"]).fetchall()
-                for ix, item in enumerate(databases, start=1):
-                    print(f'Server: {server.server} {index}/{len(self._config.servers)} Database: {item.DB_NAME} {ix}/{len(databases)}')  # noqa
-                    self._init_project(server, item.DB_NAME)
+                db_list = None
+                if self.databases:[x.DB_NAME for x in db.execute(_QUERIES["DATABASES"]).fetchall()]
+                for ix, db_name in enumerate(db_list, start=1):
+                    print(f'Server: {server.server} {index}/{len(self._config.servers)} Database: {db_name} {ix}/{len(db_list)}')  # noqa
+                    self._init_project(server, db_name)
 
     def run(self):
         self._generate()
