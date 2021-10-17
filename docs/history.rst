@@ -20,3 +20,7 @@ History
 0.1.7 (2021-10-17)
 
 * Specified database selection added to RepoGenerator.
+
+0.1.8 (2021-10-17)
+
+* db_list object fixed.
