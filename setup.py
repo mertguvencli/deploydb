@@ -7,9 +7,9 @@ from setuptools import setup, find_packages
 with open('README.md') as readme_file:
     readme = readme_file.read()
 
-requirements = [ 'pyodbc', 'GitPython', 'pydantic', 'colorama' ]
+requirements = [ 'pyodbc', 'GitPython', 'pydantic' ]
 
-test_requirements = [ 'pyodbc', 'GitPython', 'pydantic', 'colorama' ]
+test_requirements = [ 'pyodbc', 'GitPython', 'pydantic' ]
 
 setup(
     author="Mert Güvençli",
@@ -42,6 +42,6 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/mertguvencli/deploydb',
-    version='0.1.6',
+    version='0.1.7',
     zip_safe=False,
 )
