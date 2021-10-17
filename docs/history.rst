@@ -24,3 +24,7 @@ History
 0.1.8 (2021-10-17)
 
 * db_list object fixed.
+
+0.1.9 (2021-10-17)
+
+* newline fixed on csv file.
