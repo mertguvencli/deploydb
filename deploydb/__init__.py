@@ -105,7 +105,7 @@ class Base:
 def _save_csv(path, columns, rows):
     file_exists = os.path.exists(path)
     mode = 'a' if file_exists else 'w'
-    with open(path, mode) as f:
+    with open(path, mode=mode, newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if not file_exists:
             writer.writerow(columns)
@@ -114,7 +114,7 @@ def _save_csv(path, columns, rows):
 
 def _set_commit_log(hexsha, path):
     columns = ['hash', 'time']
-    row = [hexsha, datetime.now()]
+    row = [[hexsha, datetime.now()]]
     _save_csv(path=path, columns=columns, rows=row)
 
 
@@ -568,7 +568,7 @@ class Listener(Base):
             print("Checking changes...", datetime.now())
             repo = Repo(self._config.local_path)
             origin = repo.remotes.origin
-            origin._pull()
+            origin.pull()
 
             source_hash = _last_commit_hash(path=self.changelog_path)
             target_hash = repo.head.commit.hexsha
