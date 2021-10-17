@@ -431,7 +431,11 @@ class RepoGenerator(Base):
             _db = Database(server)
             with _db.connect("master") as db:
                 db_list = None
-                if self.databases:[x.DB_NAME for x in db.execute(_QUERIES["DATABASES"]).fetchall()]
+                if self.databases:
+                    db_list = self.databases
+                else:
+                    db_list = [x.DB_NAME for x in db.execute(_QUERIES["DATABASES"]).fetchall()]
+
                 for ix, db_name in enumerate(db_list, start=1):
                     print(f'Server: {server.server} {index}/{len(self._config.servers)} Database: {db_name} {ix}/{len(db_list)}')  # noqa
                     self._init_project(server, db_name)
