@@ -1,67 +1,21 @@
 """Top-level package for deploydb."""
-__author__ = """Mert Güvençli"""
+__author__ = 'Mert Guvencli'
 __email__ = 'guvenclimert@gmail.com'
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 import os
 import sys
+import traceback
 from datetime import datetime
 import time
 import json
-import csv
-from contextlib import contextmanager
-from typing import Any, List, Optional
+from typing import Any
 
 from git import Repo, Git
-import pyodbc
-from pydantic import BaseModel
-
-
-class Server(BaseModel):
-    driver: str
-    server: str
-    server_alias: str
-    user: str
-    passw: str
-
-
-class Config(BaseModel):
-    local_path: str
-    https_url: Optional[str] = None
-    ssh_url: Optional[str] = None
-    target_branch: str
-    servers: List[Server]
-
-
-class Database:
-    """ Represents a database connection """
-
-    def __init__(self, creds: Server) -> None:
-        self.creds = creds.__dict__
-        self._conn_str = 'APP=deploydb;DRIVER={driver};SERVER={server};DATABASE=master;UID={user};PWD={passw}' # noqa
-        self._conn_builder()
-
-    def _conn_builder(self) -> str:
-        self._conn_str = self._conn_str.format(**self.creds)
-
-    @contextmanager
-    def connect(self, db_name='master'):
-        connection = pyodbc.connect(
-            str=self._conn_str,
-            autocommit=True
-        )
-        connection.timeout = 5  # default timeout 5 sec.
-        cursor = connection.cursor()
-        try:
-            cursor.execute(f"USE {db_name};")
-            yield cursor
-        except pyodbc.DatabaseError as err:
-            error, = err.args
-            sys.stderr.write(error.message)
-        except pyodbc.ProgrammingError as prg:
-            raise prg
-        finally:
-            connection.close()
+from .model import Server, Config
+from .db import Database
+from .utils import _save_csv, _set_commit_log, _last_commit_hash
+from .script import DATABASES, OBJECTS, TABLES, CREATE_TABLE, GET_OBJECT
 
 
 class Base:
@@ -102,239 +56,6 @@ class Base:
                     db.execute("SELECT 1").fetchone()
 
 
-def _save_csv(path, columns, rows):
-    file_exists = os.path.exists(path)
-    mode = 'a' if file_exists else 'w'
-    with open(path, mode=mode, newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(columns)
-        writer.writerows(rows)
-
-
-def _set_commit_log(hexsha, path):
-    columns = ['hash', 'time']
-    row = [[hexsha, datetime.now()]]
-    _save_csv(path=path, columns=columns, rows=row)
-
-
-def _last_commit_hash(path):
-    logs = []
-    file_exists = os.path.exists(path)
-    if file_exists:
-        with open(path, 'r') as f:
-            logs = [line for line in csv.reader(f)]
-    if len(logs) > 1:
-        return logs[-1][0]  # commit_id
-    return None
-
-
-_SUB_FOLDERS = (
-    'Tables',
-    'Views',
-    'Functions',
-    'Stored-Procedures',
-    'Triggers',
-    'Types',
-    'DMLs',
-    'DDLs'
-)
-
-_QUERIES = dict(
-    DATABASES = """
-        SELECT name AS DB_NAME
-        FROM sys.databases
-        WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
-    """,  # noqa
-    TABLES = """
-        SELECT
-            SCHEMA_NAME = schemas.name
-        ,   TABLE_NAME  = tables.name
-        FROM sys.tables, sys.schemas
-        WHERE tables.schema_id = schemas.schema_id
-    """, # noqa
-    CREATE_TABLE = """
-        DECLARE
-            @schema_name    NVARCHAR(200) = ?
-        ,	@table_name     NVARCHAR(300) = ?
-
-        DECLARE
-            @object_name    SYSNAME
-        ,   @object_id      INT
-
-        SELECT
-            @object_name    = '[' + s.name + '].[' + o.name + ']'
-        ,   @object_id      = o.[object_id]
-        FROM sys.objects o WITH (NOWAIT)
-            JOIN sys.schemas s WITH (NOWAIT) ON o.[schema_id] = s.[schema_id]
-        WHERE s.name = @schema_name
-        AND o.name = @table_name
-        AND o.[type] = 'U'
-        AND o.is_ms_shipped = 0
-
-        DECLARE @SQL NVARCHAR(MAX) = ''
-
-        ;WITH index_column AS
-        (
-            SELECT
-                ic.[object_id]
-                , ic.index_id
-                , ic.is_descending_key
-                , ic.is_included_column
-                , c.name
-            FROM sys.index_columns ic WITH (NOWAIT)
-            JOIN sys.columns c WITH (NOWAIT) ON ic.[object_id] = c.[object_id] AND ic.column_id = c.column_id
-            WHERE ic.[object_id] = @object_id
-        ),
-        fk_columns AS
-        (
-            SELECT
-                k.constraint_object_id
-                , cname = c.name
-                , rcname = rc.name
-            FROM sys.foreign_key_columns k WITH (NOWAIT)
-            JOIN sys.columns rc WITH (NOWAIT) ON rc.[object_id] = k.referenced_object_id AND rc.column_id = k.referenced_column_id
-            JOIN sys.columns c WITH (NOWAIT) ON c.[object_id] = k.parent_object_id AND c.column_id = k.parent_column_id
-            WHERE k.parent_object_id = @object_id
-        )
-        SELECT @SQL = 'CREATE TABLE ' + @object_name + CHAR(13) + '(' + CHAR(13) + STUFF((
-            SELECT CHAR(9) + ', [' + c.name + '] ' +
-                CASE WHEN c.is_computed = 1
-                    THEN 'AS ' + cc.[definition]
-                    ELSE (tp.name) +
-                        CASE WHEN tp.name IN ('varchar', 'char', 'varbinary', 'binary', 'text')
-                            THEN '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS VARCHAR(5)) END + ')'
-                            --WHEN tp.name IN ('nvarchar', 'nchar', 'ntext')
-                            WHEN tp.name IN ('nvarchar', 'nchar')
-                            THEN '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length / 2 AS VARCHAR(5)) END + ')'
-                            WHEN tp.name IN ('datetime2', 'time2', 'datetimeoffset')
-                            THEN '(' + CAST(c.scale AS VARCHAR(5)) + ')'
-                            WHEN tp.name = 'decimal'
-                            THEN '(' + CAST(c.[precision] AS VARCHAR(5)) + ',' + CAST(c.scale AS VARCHAR(5)) + ')'
-                            ELSE ''
-                        END +
-                        --CASE WHEN c.collation_name IS NOT NULL THEN ' COLLATE ' + c.collation_name ELSE '' END +
-                        CASE WHEN c.is_nullable = 1 THEN ' NULL' ELSE ' NOT NULL' END +
-                        CASE WHEN dc.[definition] IS NOT NULL THEN ' DEFAULT' + dc.[definition] ELSE '' END +
-                        CASE WHEN ic.is_identity = 1 THEN ' IDENTITY(' + CAST(ISNULL(ic.seed_value, '0') AS CHAR(1)) + ',' + CAST(ISNULL(ic.increment_value, '1') AS CHAR(1)) + ')' ELSE '' END
-                END + CHAR(13)
-            FROM sys.columns c WITH (NOWAIT)
-            JOIN sys.types tp WITH (NOWAIT) ON c.user_type_id = tp.user_type_id
-            LEFT JOIN sys.computed_columns cc WITH (NOWAIT) ON c.[object_id] = cc.[object_id] AND c.column_id = cc.column_id
-            LEFT JOIN sys.default_constraints dc WITH (NOWAIT) ON c.default_object_id != 0 AND c.[object_id] = dc.parent_object_id AND c.column_id = dc.parent_column_id
-            LEFT JOIN sys.identity_columns ic WITH (NOWAIT) ON c.is_identity = 1 AND c.[object_id] = ic.[object_id] AND c.column_id = ic.column_id
-            WHERE c.[object_id] = @object_id
-            ORDER BY c.column_id
-            FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, CHAR(9) + ' ')
-            + ISNULL((SELECT CHAR(9) + ', CONSTRAINT [' + k.name + '] PRIMARY KEY (' +
-                            (SELECT STUFF((
-                                SELECT ', [' + c.name + '] ' + CASE WHEN ic.is_descending_key = 1 THEN 'DESC' ELSE 'ASC' END
-                                FROM sys.index_columns ic WITH (NOWAIT)
-                                JOIN sys.columns c WITH (NOWAIT) ON c.[object_id] = ic.[object_id] AND c.column_id = ic.column_id
-                                WHERE ic.is_included_column = 0
-                                    AND ic.[object_id] = k.parent_object_id
-                                    AND ic.index_id = k.unique_index_id
-                                FOR XML PATH(N''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, ''))
-                    + ')' + CHAR(13)
-                    FROM sys.key_constraints k WITH (NOWAIT)
-                    WHERE k.parent_object_id = @object_id
-                        AND k.[type] = 'PK'), '') + ')'  + CHAR(13)
-            + ISNULL((SELECT (
-                SELECT CHAR(13) +
-                    'ALTER TABLE ' + @object_name + ' WITH'
-                    + CASE WHEN fk.is_not_trusted = 1
-                        THEN ' NOCHECK'
-                        ELSE ' CHECK'
-                    END +
-                    ' ADD CONSTRAINT [' + fk.name  + '] FOREIGN KEY('
-                    + STUFF((
-                        SELECT ', [' + k.cname + ']'
-                        FROM fk_columns k
-                        WHERE k.constraint_object_id = fk.[object_id]
-                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
-                    + ')' +
-                    ' REFERENCES [' + SCHEMA_NAME(ro.[schema_id]) + '].[' + ro.name + '] ('
-                    + STUFF((
-                        SELECT ', [' + k.rcname + ']'
-                        FROM fk_columns k
-                        WHERE k.constraint_object_id = fk.[object_id]
-                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '')
-                    + ')'
-                    + CASE
-                        WHEN fk.delete_referential_action = 1 THEN ' ON DELETE CASCADE'
-                        WHEN fk.delete_referential_action = 2 THEN ' ON DELETE SET NULL'
-                        WHEN fk.delete_referential_action = 3 THEN ' ON DELETE SET DEFAULT'
-                        ELSE ''
-                    END
-                    + CASE
-                        WHEN fk.update_referential_action = 1 THEN ' ON UPDATE CASCADE'
-                        WHEN fk.update_referential_action = 2 THEN ' ON UPDATE SET NULL'
-                        WHEN fk.update_referential_action = 3 THEN ' ON UPDATE SET DEFAULT'
-                        ELSE ''
-                    END
-                    + CHAR(13) + 'ALTER TABLE ' + @object_name + ' CHECK CONSTRAINT [' + fk.name  + ']' + CHAR(13)
-                FROM sys.foreign_keys fk WITH (NOWAIT)
-                JOIN sys.objects ro WITH (NOWAIT) ON ro.[object_id] = fk.referenced_object_id
-                WHERE fk.parent_object_id = @object_id
-                FOR XML PATH(N''), TYPE).value('.', 'NVARCHAR(MAX)')), '')
-            + ISNULL(((SELECT
-                CHAR(13) + 'CREATE' + CASE WHEN i.is_unique = 1 THEN ' UNIQUE' ELSE '' END
-                        + ' NONCLUSTERED INDEX [' + i.name + '] ON ' + @object_name + ' (' +
-                        STUFF((
-                        SELECT ', [' + c.name + ']' + CASE WHEN c.is_descending_key = 1 THEN ' DESC' ELSE ' ASC' END
-                        FROM index_column c
-                        WHERE c.is_included_column = 0
-                            AND c.index_id = i.index_id
-                        FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') + ')'
-                        + ISNULL(CHAR(13) + 'INCLUDE (' +
-                            STUFF((
-                            SELECT ', [' + c.name + ']'
-                            FROM index_column c
-                            WHERE c.is_included_column = 1
-                                AND c.index_id = i.index_id
-                            FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') + ')', '')  + CHAR(13)
-                FROM sys.indexes i WITH (NOWAIT)
-                WHERE i.[object_id] = @object_id
-                    AND i.is_primary_key = 0
-                    AND i.[type] = 2
-                FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)')
-            ), '')
-
-        SELECT @SQL AS SQL
-    """,  # noqa
-    OBJECTS = """
-        SELECT
-            SUB_FOLDER		= CASE all_objects.type
-                                WHEN 'FN' THEN 'Functions'			-- SQL_SCALAR_FUNCTION
-                                WHEN 'V ' THEN 'Views'				-- VIEW
-                                WHEN 'IF' THEN 'Functions'			-- SQL_INLINE_TABLE_VALUED_FUNCTION
-                                WHEN 'TF' THEN 'Functions'			-- SQL_TABLE_VALUED_FUNCTION
-                                WHEN 'P ' THEN 'Stored-Procedures'	-- SQL_STORED_PROCEDURE
-                                WHEN 'TR' THEN 'Triggers'			-- SQL_TRIGGER
-                            END
-        ,	OBJECT_ID	= all_objects.object_id
-        ,	SCHEMA_NAME	= schemas.name
-        ,	OBJECT_NAME	= all_objects.name
-        ,	SQL		    = all_sql_modules.definition
-
-        FROM sys.all_objects, sys.schemas, sys.all_sql_modules
-        WHERE all_objects.schema_id = schemas.schema_id
-        AND all_sql_modules.object_id = all_objects.object_id
-        AND all_objects.object_id > 0
-        ORDER BY
-            CASE all_objects.type
-                WHEN 'FN' THEN 1	-- SQL_SCALAR_FUNCTION
-                WHEN 'V ' THEN 2	-- VIEW
-                WHEN 'IF' THEN 3	-- SQL_INLINE_TABLE_VALUED_FUNCTION
-                WHEN 'TF' THEN 4	-- SQL_TABLE_VALUED_FUNCTION
-                WHEN 'P ' THEN 5	-- SQL_STORED_PROCEDURE
-                WHEN 'TR' THEN 6	-- SQL_TRIGGER
-            END
-        ,	all_objects.object_id
-    """  # noqa
-)
-
-
 class RepoGenerator(Base):
     """It will create your database object's script that you need.
 
@@ -343,6 +64,7 @@ class RepoGenerator(Base):
         export_path (str): where the exported files locate
         databases (list, optional): default takes all databases from the given credential.
         err_file_name (str, optional): where the errors locate. Defaults to "errors.csv".
+
     Example:
         from deploydb import RepoGenerator
 
@@ -367,13 +89,28 @@ class RepoGenerator(Base):
         self.err_file_name = err_file_name
         self._failure = []
 
+        self.sub_folders = (
+            'Tables',
+            'Views',
+            'Functions',
+            'Stored-Procedures',
+            'Triggers',
+            'Types',
+            'DMLs',
+            'DDLs'
+        )
+
     def _handle_server(self, server: Server) -> str:
         return server.server_alias if len(server.server_alias) > 0 else server.server
 
     def _create_folder(self, _server: Server, db_name):
         # server folder
         server = self._handle_server(_server)
+
+        if not os.path.exists(self.path):
+            os.mkdir(self.path)
         project_path = os.path.join(self.path, server)
+
         if not os.path.exists(project_path):
             os.mkdir(project_path)
 
@@ -383,14 +120,33 @@ class RepoGenerator(Base):
             os.mkdir(project_path)
 
         # objects folder
-        for folder in _SUB_FOLDERS:
+        for folder in self.sub_folders:
             os.mkdir(os.path.join(self.path, project_path, folder))
         return project_path
 
-    def _write_script(self, parent, sub, object_name, script):
-        safe_name = str(object_name).replace('.', '_')
-        path = os.path.join(parent, sub, f'{safe_name}.sql')
-        with open(path, 'w') as f:
+    def _safe_file_name(self, schema_name, object_name) -> str:
+        allowed_chars = 'abcdefghijklmnopqrstuvwxyz_0123456789'
+
+        found = False
+        for char in str(object_name).lower():
+            if char not in allowed_chars:
+                found = True
+                break
+
+        if found or schema_name != "dbo":
+            object_name = f"[{object_name}]"
+
+        if schema_name == "dbo":
+            schema_name = ""
+        else:
+            schema_name = f"[{schema_name}]."
+
+        return f"{schema_name}{object_name}.sql"
+
+    def _write_script(self, parent, sub, schema_name, object_name, script):
+        safe_name = self._safe_file_name(schema_name, object_name)
+        path = os.path.join(parent, sub, safe_name)
+        with open(path, mode='w', encoding='utf-8') as f:
             f.write(script)
 
     def _init_project(self, _server: Server, db_name):
@@ -398,33 +154,35 @@ class RepoGenerator(Base):
 
         _db = Database(creds=_server)
         with _db.connect(db_name) as db:
-            tables = db.execute(_QUERIES["TABLES"]).fetchall()
+            tables = db.execute(TABLES).fetchall()
             print(f'{len(tables)} tables found on {db_name}. Generating table script...')  # noqa
 
             for index, table in enumerate(tables, start=1):
                 try:
                     script = db.execute(
-                        _QUERIES["CREATE_TABLE"],
+                        CREATE_TABLE,
                         table.SCHEMA_NAME,
                         table.TABLE_NAME
                     ).fetchone().SQL
 
-                    self._write_script(project_path, "Tables", table.TABLE_NAME, script)
+                    self._write_script(project_path, "Tables", table.SCHEMA_NAME, table.TABLE_NAME, script)
 
-                    print(f'--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')  # noqa
-                except Exception as ex:
-                    print(f'Failed--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')  # noqa
-                    self._failure.append([_server.server, db_name, "Tables", table.TABLE_NAME, str(ex)])
+                    print(f'--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')
+                except:  # noqa
+                    error = str(traceback.format_exception(*sys.exc_info()))
+                    print(f'Failed--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')
+                    self._failure.append([_server.server, db_name, "Tables", table.TABLE_NAME, error])
 
-            objects = db.execute(_QUERIES["OBJECTS"]).fetchall()
+            objects = db.execute(OBJECTS).fetchall()
             print(f'{len(objects)} objects found on {db_name}. Generating object script...')  # noqa
             for index, item in enumerate(objects, start=1):
                 try:
-                    self._write_script(project_path, item.SUB_FOLDER, item.OBJECT_NAME, item.SQL)
+                    self._write_script(project_path, item.SUB_FOLDER, item.SCHEMA_NAME, item.OBJECT_NAME, item.SQL)
                     print(f'--->{index}/{len(objects)} {item.OBJECT_NAME} on {db_name}')
-                except Exception as ex:
+                except:  # noqa
+                    error = str(traceback.format_exception(*sys.exc_info()))
                     print(f'Failed--->{index}/{len(objects)} {item.OBJECT_NAME} on {db_name}')  # noqa
-                    self._failure.append(_server.server, db_name, item.SUB_FOLDER, item.OBJECT_NAME, str(ex))
+                    self._failure.append(_server.server, db_name, item.SUB_FOLDER, item.OBJECT_NAME, error)
 
     def _generate(self):
         for index, server in enumerate(self._config.servers, start=1):
@@ -434,7 +192,7 @@ class RepoGenerator(Base):
                 if self.databases:
                     db_list = self.databases
                 else:
-                    db_list = [x.DB_NAME for x in db.execute(_QUERIES["DATABASES"]).fetchall()]
+                    db_list = [x.DB_NAME for x in db.execute(DATABASES).fetchall()]
 
                 for ix, db_name in enumerate(db_list, start=1):
                     print(f'Server: {server.server} {index}/{len(self._config.servers)} Database: {db_name} {ix}/{len(db_list)}')  # noqa
@@ -448,48 +206,6 @@ class RepoGenerator(Base):
                 columns=['SERVER', 'DB_NAME', 'SUB_FOLDER', 'OBJECT_NAME', 'ERROR'],
                 rows=self._failure
             )
-
-
-"""
-def main():
-    "Console script for deploydb."
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        '-c',
-        '--config',
-        type=str,
-        action='store',
-        help='config file path',
-        required=True
-    )
-
-    parser.add_argument(
-        '-e',
-        '--export',
-        type=str,
-        action='store',
-        help='export folder path',
-        required=True
-    )
-
-    args = vars(parser.parse_args())
-    config = args.get('config')
-    export = args.get('export')
-
-    if not config:
-        raise ValueError("config parameter is required")
-    if not export:
-        raise ValueError("export parameter is required")
-    if config and export:
-        RepoGenerator(config, export).run()
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())  # pragma: no cover
-"""
 
 
 class Listener(Base):
@@ -506,13 +222,7 @@ class Listener(Base):
         self.changelog_path = changelog_path
         self.err_path = err_path
 
-    def _prep_cmd(self, file) -> Any:
-        path = os.path.join(self._config.local_path, file)
-        with open(path, 'r') as f:
-            return f.read()
-
-    def _run_cmd(self, server, db_name, file) -> None:
-        cmd = self._prep_cmd(file)
+    def _server_creds(self, server):
         creds = None
         for x in self._config.servers:
             if not creds and x.server_alias == server:
@@ -521,9 +231,19 @@ class Listener(Base):
                 creds = x
         if not creds:
             raise Exception(f'Server: {server} was not found in configuration!')
+        return creds
 
-        _db = Database(creds)
-        with _db.connect(db_name) as db:
+    def _db(self, server):
+        return Database(self._server_creds(server))
+
+    def _prep_cmd(self, file) -> Any:
+        path = os.path.join(self._config.local_path, file)
+        with open(path, mode='r', encoding='utf-8') as f:
+            return f.read()
+
+    def _run_cmd(self, server, db_name, file) -> None:
+        cmd = self._prep_cmd(file)
+        with self._db(server).connect(db_name) as db:
             db.execute(cmd)
 
     def _pull(self):
@@ -548,16 +268,38 @@ class Listener(Base):
 
     def _extract_creds(self, changed_file):
         x = changed_file.split('/')
-        server = x[0]
-        db_name = x[1]
-        return server, db_name
+        server = str(x[0])
+        db_name = str(x[1])
+        object_type = str(x[2])
+        object_name = str(x[3]).split('.')[0]
+        return server, db_name, object_type, object_name
 
-    def sync(self, loop=False, sleep=5):
+    def _is_object_exists(self, server, db_name, object_type, object_name):
+        print("Is object exists", server, db_name, object_type, object_name)
+        with self._db(server).connect(db_name) as db:
+            res = any(db.execute(GET_OBJECT, object_type, object_name).fetchall())
+            print(f"{object_name} is exists : {res}")
+            return res
+
+    def policy(self, file):
+        """ Determine if the script be able to execute ? """
+        server, db_name, object_type, object_name = self._extract_creds(file)
+
+        # If table already created, script wont execute.
+        if object_type == "Tables":
+            if self._is_object_exists(server, db_name, object_type, object_name):
+                print("Item rejected!")
+                return False
+
+        return True
+
+    def sync(self, loop=False, sleep=5, retry=3):
         """Handles changes and deploy to your server automatically.
 
         Args:
             loop (bool, optional): creates infinite loop to handle changes. Defaults to False.
-            sleep (int, optional): determines how many seconds it will run. Defaults to 5.
+            sleep (int, optional): determines how many seconds will run. Defaults to 5.
+            retry (int, optional): if any error occurs how many times will retry. Defaults to 3.
         """
         if not os.path.exists(self._config.local_path):
             print(f"Initial pulling branch: {self._config.target_branch}")
@@ -582,12 +324,20 @@ class Listener(Base):
 
                 changed_files = [f.a_path for f in git_diff]
                 for item in changed_files:
-                    print("Changed file:", item)
-                    server, db_name = self._extract_creds(item)
-                    try:
-                        self._run_cmd(server, db_name, item)
-                    except Exception as ex:
-                        failure.append([item, str(ex)])
+                    if str(item).endswith('.sql'):
+                        print("Changed file:", item)
+                        server, db_name, object_type, object_name = self._extract_creds(item)
+
+                        # Refers customized applied policies.
+                        # Pre-defined rules are listed. You may customize that.
+                        # Say for instance:
+                        # Prevent DDL commands side affects over existing table.
+                        if self.policy(file=item):
+                            try:
+                                self._run_cmd(server, db_name, file=item)
+                            except:  # noqa
+                                error = str(traceback.format_exception(*sys.exc_info()))
+                                failure.append([item, error])
 
                 _set_commit_log(hexsha=target_hash, path=self.changelog_path)
 
@@ -598,5 +348,10 @@ class Listener(Base):
 
         changes()
         while loop:
-            changes()
-            time.sleep(sleep)
+            if retry > 0:
+                try:
+                    changes()
+                    time.sleep(sleep)
+                except:  # noqa
+                    retry -= 1
+                    print(f"Remaining retry: {retry}")

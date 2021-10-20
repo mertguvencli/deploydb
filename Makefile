@@ -62,7 +62,8 @@ coverage: ## check code coverage quickly with the default Python
 	coverage run --source deploydb setup.py test
 	coverage report -m
 	coverage html
-	$(BROWSER) htmlcov/index.html
+	
+## $(BROWSER) htmlcov/index.html
 
 docs: ## generate Sphinx HTML documentation, including API docs
 	rm -f docs/deploydb.rst
