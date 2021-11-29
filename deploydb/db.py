@@ -26,7 +26,7 @@ class Database:
         connection.timeout = 5  # default timeout 5 sec.
         cursor = connection.cursor()
         try:
-            cursor.execute(f"USE {db_name};")
+            cursor.execute(f"USE [{db_name}];")
             yield cursor
         except pyodbc.DatabaseError as err:
             error, = err.args
