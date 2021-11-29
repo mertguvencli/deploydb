@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from git import Repo, Git
-from .model import DbCreds, Config
+from .model import Config
 from .db import Database
 from .utils import _save_csv, _set_commit_log, _last_commit_hash
 from .script import DATABASES, OBJECTS, TABLES, CREATE_TABLE, GET_OBJECT
@@ -169,7 +169,7 @@ class RepoGenerator(Base):
                         table.SCHEMA_NAME,
                         table.TABLE_NAME
                     ).fetchone().SQL
-                    
+
                     if len(str(script)) > 0:
                         self._write_script(project_path, "Tables", table.SCHEMA_NAME, table.TABLE_NAME, script)
 
@@ -352,7 +352,7 @@ class Listener(Base):
                 time.sleep(sleep)
 
                 # if not consecutive, setting default value
-                if now - prev < (sleep + abs(sleep - 1)) :
+                if now - prev < (sleep + abs(sleep - 1)):
                     _fails = 0
             except:  # noqa
                 error = str(traceback.format_exception(*sys.exc_info()))
