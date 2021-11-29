@@ -90,14 +90,14 @@ class RepoGenerator(Base):
         self._failure = []
 
         self.sub_folders = (
-            'Tables',
-            'Views',
-            'Functions',
-            'Stored-Procedures',
-            'Triggers',
-            'Types',
-            'DMLs',
-            'DDLs'
+            {'Tables': '**Tables**'},
+            {'Views': '**Views**'},
+            {'Functions': '**Functions**'},
+            {'Stored-Procedures': '**Stored-Procedures**'},
+            {'Triggers': '**Triggers**'},
+            {'Types': '**User Defined Data Types**'},
+            {'DMLs': '**DMLs - Data Manipulation**'},
+            {'DDLs': '**DDLs - Data Definition**'}
         )
 
     def _handle_server(self, server: Server) -> str:
@@ -121,7 +121,17 @@ class RepoGenerator(Base):
 
         # objects folder
         for folder in self.sub_folders:
-            os.mkdir(os.path.join(self.path, project_path, folder))
+            if isinstance(folder, str):
+                os.mkdir(os.path.join(self.path, project_path, folder))
+
+            # add README.md file
+            if isinstance(folder, dict):
+                _folder = list(folder.keys())[0]
+                os.mkdir(os.path.join(self.path, project_path, _folder))
+
+                with open(os.path.join(self.path, project_path, _folder, f'{_folder}_README.md'), 'w') as f:
+                    f.write(folder.get(_folder))
+
         return project_path
 
     def _safe_file_name(self, schema_name, object_name) -> str:
