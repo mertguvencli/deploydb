@@ -55,7 +55,8 @@ from deploydb import RepoGenerator
 scripter = RepoGenerator(
     config="config.json",
     export_path="path-to-export",
-    databases=[]  # Default takes all databases from the given credential if not specified.
+    includes=[],  # Default takes all databases from the given credential if not specified.
+    excludes=[]
 )
 scripter.run()
 ```

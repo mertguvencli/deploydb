@@ -1,7 +1,7 @@
 """Top-level package for deploydb."""
 __author__ = 'Mert Guvencli'
 __email__ = 'guvenclimert@gmail.com'
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 import os
 import sys
@@ -289,7 +289,7 @@ class Listener(Base):
         return True
 
     def sync(self, loop=False, sleep=15, max_retry=3):
-        """Handles changes and deploy to your server automatically.
+        """Handles changes and deploys to your server automatically.
 
         Args:
             loop (bool, optional): creates infinite loop to handle changes. Defaults to False.

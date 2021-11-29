@@ -24,7 +24,7 @@ Property                     Description
 ``local_path``               where the local repository will be located
 ``https_url`` or ``ssh_url`` address to be listen
 ``target_branch``            branch to handle changes
-``servers``                  a list of server credentials
+``db_creds``                 a list of server credentials
 ============================ ==========================================
 
 Example: ``config.json``
@@ -35,16 +35,13 @@ Example: ``config.json``
        "local_path": "",
        "https_url": "",
        "ssh_url": "",
-       "target_branch": "",
-       "servers": [
-           {
-               "driver": "ODBC Driver 17 for SQL Server",
-               "server": "server-address-or-instance-name",
-               "server_alias": "Staging",
-               "user": "your-username",
-               "passw": "your-password"
-           }
-       ]
+       "target_branch": "main",
+       "db_creds": {
+           "driver": "ODBC Driver 17 for SQL Server",
+           "server": "server-address-or-instance-name",
+           "user": "your-username",
+           "passw": "your-password"
+       }
    }
 
 2- Listener will listen every changes with ``sync`` method.
@@ -69,7 +66,8 @@ database objects then create your repository.
    scripter = RepoGenerator(
        config="config.json",
        export_path="path-to-export",
-       databases=[]  # Default takes all databases from the given credential if not specified.
+       includes=[],  # Default takes all databases from the given credential if not specified.
+       excludes=[]
    )
    scripter.run()
 
@@ -77,21 +75,19 @@ database objects then create your repository.
 
 ::
 
-   path-to-export
-   │
-   └───Server-X
-       │    └───DB-X
-       │    │   └───Tables
-       │    │   └───Views
-       │    │   └───Functions
-       │    │   └───Stored-Procedures
-       │    │   └───Triggers
-       │    │   └───Types
-       │    │   └───DMLs
-       │    │   └───DDLs
-       |    |
-       │    N-Database
-       N-Server
+   .
+   ├── Databases
+   │   ├── Your-Db-Name
+   │   │   ├── DDLs
+   │   │   ├── DMLs
+   │   │   ├── Functions
+   │   │   ├── Stored-Procedures
+   │   │   ├── Tables
+   │   │   ├── Triggers
+   │   │   ├── Types
+   │   │   └── Views
+   │   └── Database-N
+   └── README.md
 
 TODO
 ----
