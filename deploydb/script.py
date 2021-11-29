@@ -182,6 +182,7 @@ OBJECTS = """
     WHERE all_objects.schema_id = schemas.schema_id
     AND all_sql_modules.object_id = all_objects.object_id
     AND all_objects.object_id > 0
+    AND all_sql_modules.definition IS NOT NULL
     ORDER BY
         CASE all_objects.type
             WHEN 'FN' THEN 1	-- SQL_SCALAR_FUNCTION

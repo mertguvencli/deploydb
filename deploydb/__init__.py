@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from git import Repo, Git
-from .model import Server, Config
+from .model import DbCreds, Config
 from .db import Database
 from .utils import _save_csv, _set_commit_log, _last_commit_hash
 from .script import DATABASES, OBJECTS, TABLES, CREATE_TABLE, GET_OBJECT
@@ -49,11 +49,10 @@ class Base:
             )
 
         if self._config:
-            for server in self._config.servers:
-                _db = Database(server)
-                with _db.connect() as db:
-                    print("Database connection successfully created!")
-                    db.execute("SELECT 1").fetchone()
+            _db = Database(self._config.db_creds)
+            with _db.connect() as db:
+                print("Database connection successfully created!")
+                db.execute("SELECT 1").fetchone()
 
 
 class RepoGenerator(Base):
@@ -62,8 +61,9 @@ class RepoGenerator(Base):
     Args:
         config (Any): config file or a `dict`.
         export_path (str): where the exported files locate
-        databases (list, optional): default takes all databases from the given credential.
-        err_file_name (str, optional): where the errors locate. Defaults to "errors.csv".
+        includes (list, optional): default takes all databases from the given credential.
+        excludes (list, optional): exclude databases from the given credential.
+        err_file_path (str, optional): where the errors locate. Defaults to "errors.csv".
 
     Example:
         from deploydb import RepoGenerator
@@ -71,7 +71,8 @@ class RepoGenerator(Base):
         scripter = RepoGenerator(
             config="config.json",
             export_path="path-to-export",
-            databases=['MyDbName']
+            includes=[],
+            excludes=[]
         )
         scripter.run()
     """
@@ -80,13 +81,15 @@ class RepoGenerator(Base):
         *,
         config,
         export_path,
-        databases=[],
-        err_file_name="errors.csv"
+        includes=[],
+        excludes=[],
+        err_file_path="errors.csv"
     ) -> None:
         super().__init__(config)
         self.path = export_path
-        self.databases = databases
-        self.err_file_name = err_file_name
+        self.includes = includes
+        self.excludes = excludes
+        self.err_file_path = err_file_path
         self._failure = []
 
         self.sub_folders = (
@@ -96,21 +99,17 @@ class RepoGenerator(Base):
             {'Stored-Procedures': '**Stored-Procedures**'},
             {'Triggers': '**Triggers**'},
             {'Types': '**User Defined Data Types**'},
-            {'DMLs': '**DMLs - Data Manipulation**'},
-            {'DDLs': '**DDLs - Data Definition**'}
+            {'DMLs': '**DMLs - Data Manipulations**'},
+            {'DDLs': '**DDLs - Data Definitions**'}
         )
 
-    def _handle_server(self, server: Server) -> str:
-        return server.server_alias if len(server.server_alias) > 0 else server.server
-
-    def _create_folder(self, _server: Server, db_name):
-        # server folder
-        server = self._handle_server(_server)
-
+    def _create_folder(self, db_name):
+        # base folder
         if not os.path.exists(self.path):
             os.mkdir(self.path)
-        project_path = os.path.join(self.path, server)
 
+        # wrapper folder
+        project_path = os.path.join(self.path, 'Databases')
         if not os.path.exists(project_path):
             os.mkdir(project_path)
 
@@ -121,16 +120,12 @@ class RepoGenerator(Base):
 
         # objects folder
         for folder in self.sub_folders:
-            if isinstance(folder, str):
-                os.mkdir(os.path.join(self.path, project_path, folder))
-
             # add README.md file
-            if isinstance(folder, dict):
-                _folder = list(folder.keys())[0]
-                os.mkdir(os.path.join(self.path, project_path, _folder))
+            _folder = list(folder.keys())[0]
+            os.mkdir(os.path.join(self.path, project_path, _folder))
 
-                with open(os.path.join(self.path, project_path, _folder, f'{_folder}_README.md'), 'w') as f:
-                    f.write(folder.get(_folder))
+            with open(os.path.join(self.path, project_path, _folder, f'{_folder}_README.md'), 'w') as f:
+                f.write(folder.get(_folder))
 
         return project_path
 
@@ -159,10 +154,10 @@ class RepoGenerator(Base):
         with open(path, mode='w', encoding='utf-8') as f:
             f.write(script)
 
-    def _init_project(self, _server: Server, db_name):
-        project_path = self._create_folder(_server, db_name)
+    def _init_project(self, db_name):
+        project_path = self._create_folder(db_name)
 
-        _db = Database(creds=_server)
+        _db = Database(creds=self._config.db_creds)
         with _db.connect(db_name) as db:
             tables = db.execute(TABLES).fetchall()
             print(f'{len(tables)} tables found on {db_name}. Generating table script...')  # noqa
@@ -174,14 +169,15 @@ class RepoGenerator(Base):
                         table.SCHEMA_NAME,
                         table.TABLE_NAME
                     ).fetchone().SQL
-
-                    self._write_script(project_path, "Tables", table.SCHEMA_NAME, table.TABLE_NAME, script)
+                    
+                    if len(str(script)) > 0:
+                        self._write_script(project_path, "Tables", table.SCHEMA_NAME, table.TABLE_NAME, script)
 
                     print(f'--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')
                 except:  # noqa
                     error = str(traceback.format_exception(*sys.exc_info()))
                     print(f'Failed--->{index}/{len(tables)} {table.TABLE_NAME} on {db_name}')
-                    self._failure.append([_server.server, db_name, "Tables", table.TABLE_NAME, error])
+                    self._failure.append([db_name, "Tables", table.TABLE_NAME, error])
 
             objects = db.execute(OBJECTS).fetchall()
             print(f'{len(objects)} objects found on {db_name}. Generating object script...')  # noqa
@@ -192,28 +188,29 @@ class RepoGenerator(Base):
                 except:  # noqa
                     error = str(traceback.format_exception(*sys.exc_info()))
                     print(f'Failed--->{index}/{len(objects)} {item.OBJECT_NAME} on {db_name}')  # noqa
-                    self._failure.append(_server.server, db_name, item.SUB_FOLDER, item.OBJECT_NAME, error)
+                    self._failure.append(db_name, item.SUB_FOLDER, item.OBJECT_NAME, error)
 
     def _generate(self):
-        for index, server in enumerate(self._config.servers, start=1):
-            _db = Database(server)
-            with _db.connect("master") as db:
-                db_list = None
-                if self.databases:
-                    db_list = self.databases
-                else:
-                    db_list = [x.DB_NAME for x in db.execute(DATABASES).fetchall()]
+        _db = Database(creds=self._config.db_creds)
+        with _db.connect("master") as db:
+            db_list = None
+            if self.includes:
+                db_list = self.includes
+            else:
+                db_list = [x.DB_NAME for x in db.execute(DATABASES).fetchall()]
 
-                for ix, db_name in enumerate(db_list, start=1):
-                    print(f'Server: {server.server} {index}/{len(self._config.servers)} Database: {db_name} {ix}/{len(db_list)}')  # noqa
-                    self._init_project(server, db_name)
+            for ix, db_name in enumerate(db_list, start=1):
+                if db_name not in self.excludes:
+                    print(f'Database: {db_name} {ix}/{len(db_list)}')  # noqa
+                    self._init_project(db_name)
+                    print("*" * 100, end="\n")
 
     def run(self):
         self._generate()
         if self._failure:
             _save_csv(
-                path=os.path.join(self.path, self.err_file_name),
-                columns=['SERVER', 'DB_NAME', 'SUB_FOLDER', 'OBJECT_NAME', 'ERROR'],
+                path=os.path.join(self.path, self.err_file_path),
+                columns=['DB_NAME', 'SUB_FOLDER', 'OBJECT_NAME', 'ERROR'],
                 rows=self._failure
             )
 
@@ -232,28 +229,17 @@ class Listener(Base):
         self.changelog_path = changelog_path
         self.err_path = err_path
 
-    def _server_creds(self, server):
-        creds = None
-        for x in self._config.servers:
-            if not creds and x.server_alias == server:
-                creds = x
-            if not creds and x.server == server:
-                creds = x
-        if not creds:
-            raise Exception(f'Server: {server} was not found in configuration!')
-        return creds
-
-    def _db(self, server):
-        return Database(self._server_creds(server))
+    def _db(self):
+        return Database(creds=self._config.db_creds)
 
     def _prep_cmd(self, file) -> Any:
         path = os.path.join(self._config.local_path, file)
         with open(path, mode='r', encoding='utf-8') as f:
             return f.read()
 
-    def _run_cmd(self, server, db_name, file) -> None:
+    def _run_cmd(self, db_name, file) -> None:
         cmd = self._prep_cmd(file)
-        with self._db(server).connect(db_name) as db:
+        with self._db().connect(db_name) as db:
             db.execute(cmd)
 
     def _pull(self):
@@ -278,38 +264,37 @@ class Listener(Base):
 
     def _extract_creds(self, changed_file):
         x = changed_file.split('/')
-        server = str(x[0])
         db_name = str(x[1])
         object_type = str(x[2])
         object_name = str(x[3]).split('.')[0]
-        return server, db_name, object_type, object_name
+        return db_name, object_type, object_name
 
-    def _is_object_exists(self, server, db_name, object_type, object_name):
-        print("Is object exists", server, db_name, object_type, object_name)
-        with self._db(server).connect(db_name) as db:
+    def _is_object_exists(self, db_name, object_type, object_name):
+        print("Is object exists", db_name, object_type, object_name)
+        with self._db().connect(db_name) as db:
             res = any(db.execute(GET_OBJECT, object_type, object_name).fetchall())
             print(f"{object_name} is exists : {res}")
             return res
 
     def policy(self, file):
         """ Determine if the script be able to execute ? """
-        server, db_name, object_type, object_name = self._extract_creds(file)
+        db_name, object_type, object_name = self._extract_creds(file)
 
         # If table already created, script wont execute.
         if object_type == "Tables":
-            if self._is_object_exists(server, db_name, object_type, object_name):
+            if self._is_object_exists(db_name, object_type, object_name):
                 print("Item rejected!")
                 return False
 
         return True
 
-    def sync(self, loop=False, sleep=5, retry=3):
+    def sync(self, loop=False, sleep=15, max_retry=3):
         """Handles changes and deploy to your server automatically.
 
         Args:
             loop (bool, optional): creates infinite loop to handle changes. Defaults to False.
-            sleep (int, optional): determines how many seconds will run. Defaults to 5.
-            retry (int, optional): if any error occurs how many times will retry. Defaults to 3.
+            sleep (int, optional): determines how many seconds will run. Defaults to 15.
+            max_retry (int, optional): if any error occurs how many times will retry. Defaults to 3.
         """
         if not os.path.exists(self._config.local_path):
             print(f"Initial pulling branch: {self._config.target_branch}")
@@ -336,7 +321,7 @@ class Listener(Base):
                 for item in changed_files:
                     if str(item).endswith('.sql'):
                         print("Changed file:", item)
-                        server, db_name, object_type, object_name = self._extract_creds(item)
+                        db_name, object_type, object_name = self._extract_creds(item)
 
                         # Refers customized applied policies.
                         # Pre-defined rules are listed. You may customize that.
@@ -344,7 +329,7 @@ class Listener(Base):
                         # Prevent DDL commands side affects over existing table.
                         if self.policy(file=item):
                             try:
-                                self._run_cmd(server, db_name, file=item)
+                                self._run_cmd(db_name, file=item)
                             except:  # noqa
                                 error = str(traceback.format_exception(*sys.exc_info()))
                                 failure.append([item, error])
@@ -357,11 +342,25 @@ class Listener(Base):
                 _save_csv(self.err_path, columns, rows)
 
         changes()
+
+        _fails = 0
+        prev = time.time()
         while loop:
-            if retry > 0:
-                try:
-                    changes()
-                    time.sleep(sleep)
-                except:  # noqa
-                    retry -= 1
-                    print(f"Remaining retry: {retry}")
+            now = time.time()
+            try:
+                changes()
+                time.sleep(sleep)
+
+                # if not consecutive, setting default value
+                if now - prev < (sleep + abs(sleep - 1)) :
+                    _fails = 0
+            except:  # noqa
+                error = str(traceback.format_exception(*sys.exc_info()))
+                _fails += 1
+                print(f"An error occured, retrying ... Error: {error}")
+
+            prev = time.time()
+
+            if _fails == max_retry:
+                print('Terminating process...Maximum retry value is over.')
+                break

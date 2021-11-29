@@ -2,10 +2,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 
-class Server(BaseModel):
+class DbCreds(BaseModel):
     driver: str
     server: str
-    server_alias: str
     user: str
     passw: str
 
@@ -15,4 +14,4 @@ class Config(BaseModel):
     https_url: Optional[str] = None
     ssh_url: Optional[str] = None
     target_branch: str
-    servers: List[Server]
+    db_creds: DbCreds

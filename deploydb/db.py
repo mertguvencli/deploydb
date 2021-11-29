@@ -3,13 +3,13 @@ import sys
 from contextlib import contextmanager
 import pyodbc
 
-from .model import Server
+from .model import DbCreds
 
 
 class Database:
     """ Represents a database connection """
 
-    def __init__(self, creds: Server) -> None:
+    def __init__(self, creds: DbCreds) -> None:
         self.creds = creds.__dict__
         self._conn_str = 'APP=deploydb;DRIVER={driver};SERVER={server};DATABASE=master;UID={user};PWD={passw}' # noqa
         self._conn_builder()

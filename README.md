@@ -19,7 +19,7 @@ Install the latest package. `pip install deploydb`
 |`local_path`|where the local repository will be located|
 |`https_url` or `ssh_url`|address to be listen|
 |`target_branch`|branch to handle changes|
-|`servers`|a list of server credentials|
+|`db_creds`|a list of server credentials|
 
 Example: `config.json`
 ```json
@@ -27,16 +27,13 @@ Example: `config.json`
     "local_path": "",
     "https_url": "",
     "ssh_url": "",
-    "target_branch": "",
-    "servers": [
-        {
-            "driver": "ODBC Driver 17 for SQL Server",
-            "server": "server-address-or-instance-name",
-            "server_alias": "Staging",
-            "user": "your-username",
-            "passw": "your-password"
-        }
-    ]
+    "target_branch": "main",
+    "db_creds": {
+        "driver": "ODBC Driver 17 for SQL Server",
+        "server": "server-address-or-instance-name",
+        "user": "your-username",
+        "passw": "your-password"
+    }
 }
 ```
 
@@ -65,21 +62,19 @@ scripter.run()
 `RepoGenerator` will extract objects structure as below.
 
 ```
-path-to-export
-│
-└───Server-X
-    │    └───DB-X
-    │    │   └───Tables
-    │    │   └───Views
-    │    │   └───Functions
-    │    │   └───Stored-Procedures
-    │    │   └───Triggers
-    │    │   └───Types
-    │    │   └───DMLs
-    │    │   └───DDLs
-    |    |
-    │    N-Database
-    N-Server
+.
+├── Databases
+│   ├── Your-Db-Name
+│   │   ├── DDLs
+│   │   ├── DMLs
+│   │   ├── Functions
+│   │   ├── Stored-Procedures
+│   │   ├── Tables
+│   │   ├── Triggers
+│   │   ├── Types
+│   │   └── Views
+│   └── Database-N
+└── README.md
 ```
 
 ## TODO
