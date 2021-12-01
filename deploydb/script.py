@@ -1,4 +1,3 @@
-
 DATABASES = """
     SELECT name AS DB_NAME
     FROM sys.databases
@@ -208,5 +207,21 @@ GET_OBJECT = """
             WHEN 'Stored-Procedures'	THEN 'P '
             WHEN 'Triggers'			    THEN 'TR'
         END = all_objects.type
-    AND all_objects.name = ?
+    AND all_objects.id = OBJECT_ID(?)
+"""
+
+CREATE_LOG_TABLE = """
+    IF OBJECT_ID('_Deploydb_Log', 'U') IS NULL
+        CREATE TABLE _Deploydb_Log (
+            Id BIGINT IDENTITY,
+            CreatedAt DATETIME CONSTRAINT DF__DeployDbHistory_CreatedAt DEFAULT(GETDATE()),
+            Commit_HexSHA VARCHAR(64),
+            _File NVARCHAR(1500),
+            Error NVARCHAR(2000)
+        );    
+"""
+
+LOG_INSERT = """
+    INSERT INTO _Deploydb_Log (Commit_HexSHA, _File, Error)
+    VALUES (?,?,?);
 """

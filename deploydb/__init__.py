@@ -11,6 +11,7 @@ import time
 import json
 from typing import Any
 
+import pyodbc
 from git import Repo, Git
 from .model import Config
 from .db import Database
@@ -228,6 +229,11 @@ class Listener(Base):
         self.ssh_path = ssh_path
         self.changelog_path = changelog_path
         self.err_path = err_path
+        self._init_table()
+
+    def _init_table(self):
+        with self._db().connect(self._config.db_creds.default_db) as db:
+            db.execute(script.CREATE_LOG_TABLE)
 
     def _db(self):
         return Database(creds=self._config.db_creds)
@@ -237,10 +243,15 @@ class Listener(Base):
         with open(path, mode='r', encoding='utf-8') as f:
             return f.read()
 
-    def _run_cmd(self, db_name, file) -> None:
+    def _run_cmd(self, db_name, target_hash, file) -> None:
         cmd = self._prep_cmd(file)
         with self._db().connect(db_name) as db:
-            db.execute(cmd)
+            try:
+                db.execute(cmd)
+            except pyodbc.ProgrammingError as ex:
+                err, msg = ex.args
+                with self._db().connect(self._config.db_creds.default_db) as db:
+                    db.execute(script.LOG_INSERT, target_hash, file, msg)
 
     def _pull(self):
         if self._config.ssh_url:
@@ -266,7 +277,7 @@ class Listener(Base):
         x = changed_file.split('/')
         db_name = str(x[1])
         object_type = str(x[2])
-        object_name = str(x[3]).split('.')[0]
+        object_name = str(x[3]).split('.sql')[0]
         return db_name, object_type, object_name
 
     def _is_object_exists(self, db_name, object_type, object_name):
@@ -329,7 +340,7 @@ class Listener(Base):
                         # Prevent DDL commands side affects over existing table.
                         if self.policy(file=item):
                             try:
-                                self._run_cmd(db_name, file=item)
+                                self._run_cmd(db_name, target_hash, item)
                             except:  # noqa
                                 error = str(traceback.format_exception(*sys.exc_info()))
                                 failure.append([item, error])

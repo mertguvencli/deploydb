@@ -7,6 +7,7 @@ class DbCreds(BaseModel):
     server: str
     user: str
     passw: str
+    default_db: str
 
 
 class Config(BaseModel):
