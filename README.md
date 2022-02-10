@@ -43,7 +43,7 @@ Example: `config.json`
 from deploydb import Listener
 
 deploy = Listener('config.json')
-deploy.sync(loop=True)
+deploy.handle_changes()
 ```
 
 
