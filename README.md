@@ -37,7 +37,7 @@ Example: `config.json`
 }
 ```
 
-2- Listener will listen every changes with `sync` method.
+2- Listener will listen every changes with `handle_changes` method.
 
 ```python
 from deploydb import Listener
