@@ -4,6 +4,14 @@ deploydb package
 Submodules
 ----------
 
+deploydb.base module
+--------------------
+
+.. automodule:: deploydb.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 deploydb.db module
 ------------------
 
@@ -12,10 +20,26 @@ deploydb.db module
    :undoc-members:
    :show-inheritance:
 
+deploydb.listener module
+------------------------
+
+.. automodule:: deploydb.listener
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 deploydb.model module
 ---------------------
 
 .. automodule:: deploydb.model
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+deploydb.repo\_generator module
+-------------------------------
+
+.. automodule:: deploydb.repo_generator
    :members:
    :undoc-members:
    :show-inheritance:

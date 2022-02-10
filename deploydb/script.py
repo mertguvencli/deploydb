@@ -2,14 +2,7 @@ DATABASES = """
     SELECT name AS DB_NAME
     FROM sys.databases
     WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
-"""
-
-TABLES = """
-    SELECT
-        SCHEMA_NAME = schemas.name
-    ,   TABLE_NAME  = tables.name
-    FROM sys.tables, sys.schemas
-    WHERE tables.schema_id = schemas.schema_id
+    ORDER BY 1
 """
 
 CREATE_TABLE = """
@@ -163,8 +156,9 @@ CREATE_TABLE = """
 """  # noqa
 
 OBJECTS = """
-    SELECT
+	SELECT
         SUB_FOLDER		= CASE all_objects.type
+                            WHEN 'U' THEN 'Tables'			-- SQL_SCALAR_FUNCTION
                             WHEN 'FN' THEN 'Functions'			-- SQL_SCALAR_FUNCTION
                             WHEN 'V ' THEN 'Views'				-- VIEW
                             WHEN 'IF' THEN 'Functions'			-- SQL_INLINE_TABLE_VALUED_FUNCTION
@@ -177,13 +171,16 @@ OBJECTS = """
     ,	OBJECT_NAME	= all_objects.name
     ,	SQL		    = all_sql_modules.definition
 
-    FROM sys.all_objects, sys.schemas, sys.all_sql_modules
-    WHERE all_objects.schema_id = schemas.schema_id
-    AND all_sql_modules.object_id = all_objects.object_id
-    AND all_objects.object_id > 0
-    AND all_sql_modules.definition IS NOT NULL
+    FROM sys.all_objects
+		JOIN sys.schemas
+			ON schemas.schema_id = all_objects.schema_id 
+		LEFT JOIN sys.all_sql_modules
+			ON all_sql_modules.object_id = all_objects.object_id
+    WHERE all_objects.object_id > 0
+	AND all_objects.type IN ('U', 'FN', 'V', 'IF', 'TF', 'P', 'TR')
     ORDER BY
         CASE all_objects.type
+            WHEN 'U' THEN 0	-- SQL_SCALAR_FUNCTION
             WHEN 'FN' THEN 1	-- SQL_SCALAR_FUNCTION
             WHEN 'V ' THEN 2	-- VIEW
             WHEN 'IF' THEN 3	-- SQL_INLINE_TABLE_VALUED_FUNCTION
@@ -191,7 +188,8 @@ OBJECTS = """
             WHEN 'P ' THEN 5	-- SQL_STORED_PROCEDURE
             WHEN 'TR' THEN 6	-- SQL_TRIGGER
         END
-    ,	all_objects.object_id
+    ,   schemas.name
+    --,	all_objects.object_id
 """  # noqa
 
 GET_OBJECT = """
@@ -207,21 +205,30 @@ GET_OBJECT = """
             WHEN 'Stored-Procedures'	THEN 'P '
             WHEN 'Triggers'			    THEN 'TR'
         END = all_objects.type
-    AND all_objects.id = OBJECT_ID(?)
+    AND all_objects.object_id = OBJECT_ID(?)
 """
 
-CREATE_LOG_TABLE = """
-    IF OBJECT_ID('_Deploydb_Log', 'U') IS NULL
-        CREATE TABLE _Deploydb_Log (
-            Id BIGINT IDENTITY,
-            CreatedAt DATETIME CONSTRAINT DF__DeployDbHistory_CreatedAt DEFAULT(GETDATE()),
-            Commit_HexSHA VARCHAR(64),
-            _File NVARCHAR(1500),
-            Error NVARCHAR(2000)
-        );    
+INIT_DEPLOYDB = """
+    IF NOT EXISTS (SELECT NULL FROM sys.schemas WHERE name = 'Deploydb')
+        EXEC('CREATE SCHEMA Deploydb');
+
+    IF OBJECT_ID('Deploydb.ExecutionLog', 'U') IS NULL
+        CREATE TABLE Deploydb.ExecutionLog (
+            RowId INT IDENTITY,
+            CreatedAt DATETIME CONSTRAINT DF_Deploydb_ExecutionLog_CreatedAt DEFAULT(GETDATE()),
+            CommitHexSHA VARCHAR(64),
+            Folder NVARCHAR(1000),
+            IsFailed BIT CONSTRAINT DF_Deploydb_ExecutionLog_IsFailed DEFAULT(0),
+            Error NVARCHAR(2000),
+            INDEX IX_Deploydb_ExecutionLog_CommitHexSHA_Folder (CommitHexSHA, Folder)
+        );
 """
 
-LOG_INSERT = """
-    INSERT INTO _Deploydb_Log (Commit_HexSHA, _File, Error)
-    VALUES (?,?,?);
+EXECUTION_LOG_INSERT = """
+    INSERT INTO Deploydb.ExecutionLog (CommitHexSHA, Folder, IsFailed, Error)
+    VALUES (?,?,?,?);
+"""
+
+DUPLICATE_CONTROL = """
+    SELECT 1 FROM Deploydb.ExecutionLog WHERE CommitHexSHA = ? AND Folder = ?
 """

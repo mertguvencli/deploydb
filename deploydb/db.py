@@ -23,7 +23,7 @@ class Database:
             str=self._conn_str,
             autocommit=True
         )
-        connection.timeout = 5  # default timeout 5 sec.
+        connection.timeout = self.creds.get('timeout', 30)  # default timeout 30 sec.
         cursor = connection.cursor()
         try:
             cursor.execute(f"USE [{db_name}];")
@@ -31,6 +31,7 @@ class Database:
         except pyodbc.DatabaseError as err:
             error, = err.args
             sys.stderr.write(error.message)
+            raise error.message
         except pyodbc.ProgrammingError as prg:
             raise prg
         finally:
