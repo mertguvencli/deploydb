@@ -33,45 +33,49 @@ class Listener(Base):
         with self._db().connect(self._config.db_creds.default_db) as db:
             db.execute(INIT_DEPLOYDB)
 
-    def _is_executed(self, commit, folder):
+    def _is_executed(self, commit, file_path):
         with self._db().connect(self._config.db_creds.default_db) as db:
-            return True if db.execute(DUPLICATE_CONTROL, commit, folder).fetchone() else False
+            return True if db.execute(DUPLICATE_CONTROL, commit, file_path).fetchone() else False
 
     def _db(self):
         return Database(creds=self._config.db_creds)
 
-    def _prep_cmd(self, file) -> Any:
-        path = os.path.join(self._config.local_path, file)
+    def _prep_cmd(self, file: ChangedFile) -> Any:
+        path = os.path.join(self._config.local_path, file.path)
+        command = ''
         with open(path, mode='r', encoding='utf-8') as f:
-            return f.read()
+            command = f.read()
+
+        if file.object_type == 'DMLs':
+            command = 'SET NOCOUNT ON;\n' + command
+
+        return command
 
     def _add_execution_log(self, commit_id, file, is_failed, error):
         with self._db().connect(self._config.db_creds.default_db) as db:
             db.execute(EXECUTION_LOG_INSERT, commit_id, file, is_failed, error)
 
-    def _run_cmd(self, db_name, target_hash, file):
-        cmd = self._prep_cmd(file)
+    def _run_cmd(self, file: ChangedFile, target_hash):
         _failed = False
         _message = None
-        with self._db().connect(db_name) as db:
-            stime = time.time()
-
-            if self._is_executed(target_hash, file):
+        start_time = time.time()
+        with self._db().connect(file.db_name) as db:
+            if self._is_executed(target_hash, file.path):
                 print('Item already executed!')
             else:
                 print('Executing commands ...')
                 try:
-                    db.execute(cmd)
-                    self._add_execution_log(target_hash, file, False, None)
+                    db.execute(self._prep_cmd(file))
+                    self._add_execution_log(target_hash, file.path, False, None)
                 except pyodbc.ProgrammingError as ex:
                     _failed = True
                     err, _message = ex.args
-                    self._add_execution_log(target_hash, file, True, str(_message))
+                    self._add_execution_log(target_hash, file.path, True, str(_message))
                 except:  # noqa
                     _failed = True
                     _message = str(traceback.format_exception(*sys.exc_info()))
-                    self._add_execution_log(target_hash, file, True, _message)
-                print('Finished commands... Elapsed Time:', time.time()-stime)
+                    self._add_execution_log(target_hash, file.path, True, _message)
+                print('Finished commands... Elapsed Time:', time.time()-start_time)
 
         return _failed, _message
 
@@ -110,11 +114,11 @@ class Listener(Base):
 
     def policy(self, file):
         """ Determine if the script be able to execute ? """
-        x = ChangedFile(file)
+        file = ChangedFile(file)
 
         # If table already created, script wont execute.
-        if x.object_type == "Tables":
-            if self._is_object_exists(x.db_name, x.object_type, x.object_name):
+        if file.object_type == "Tables":
+            if self._is_object_exists(file.db_name, file.object_type, file.object_name):
                 print("Item rejected!")
                 return False
 
@@ -158,20 +162,22 @@ class Listener(Base):
 
                 changes = [ChangedFile(f.a_path) for f in git_diff if str(f.a_path).lower().endswith('.sql')]
 
-                for x in sorted(changes, key=lambda x: x.sequence):
+                for file in sorted(changes, key=lambda x: x.sequence):
                     # Some files may be removed the folders therefore checking...
-                    file_exists = os.path.exists(os.path.join(self._config.local_path, x.path))
+                    file_exists = os.path.exists(
+                        os.path.join(self._config.local_path, file.path)
+                    )
 
                     if file_exists:
-                        print("Changed file:", x.path)
+                        print("Changed file:", file.path)
                         # Refers customized applied policies.
                         # Pre-defined rules are listed. You may customize that.
                         # Say for instance:
                         # Prevent DDL commands side affects over existing table.
-                        if self.policy(file=x.path):
-                            failed, msg = self._run_cmd(x.db_name, target_hash, x.path)
+                        if self.policy(file=file.path):
+                            failed, msg = self._run_cmd(file, target_hash)
 
                             if failed:
-                                failure_list.append([x.path, msg])
+                                failure_list.append([file.path, msg])
 
                 return target_hash, True if failure_list else False, failure_list
