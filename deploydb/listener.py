@@ -10,8 +10,15 @@ from git import Repo, Git
 from .base import Base
 from .db import Database
 from .model import ChangedFile
-from .utils import _set_commit_log, _last_commit_hash
-from .script import EXECUTION_LOG_INSERT, INIT_DEPLOYDB, GET_OBJECT, DUPLICATE_CONTROL
+# from .utils import _set_commit_log, _last_commit_hash
+from .script import (
+    EXECUTION_LOG_INSERT,
+    INIT_DEPLOYDB,
+    GET_OBJECT,
+    DUPLICATE_CONTROL,
+    CHANGELOG_INSERT,
+    LAST_CHANGELOG_SHA,
+)
 
 
 class Listener(Base):
@@ -36,6 +43,15 @@ class Listener(Base):
     def _is_executed(self, commit, file_path):
         with self._db().connect(self._config.db_creds.default_db) as db:
             return True if db.execute(DUPLICATE_CONTROL, commit, file_path).fetchone() else False
+
+    def _set_changelog(self, commit) -> None:
+        with self._db().connect(self._config.db_creds.default_db) as db:
+            db.execute(CHANGELOG_INSERT, commit)
+    
+    def _last_changelog_hash(self) -> str:
+        with self._db().connect(self._config.db_creds.default_db) as db:
+            x = db.execute(LAST_CHANGELOG_SHA).fetchone()
+            return x[0] if x else ""
 
     def _db(self):
         return Database(creds=self._config.db_creds)
@@ -146,13 +162,13 @@ class Listener(Base):
         origin = repo.remotes.origin
         origin.pull()
 
-        source_hash = _last_commit_hash(path=self.changelog_path)
+        source_hash = self._last_changelog_hash()
         target_hash = repo.head.commit.hexsha
 
         failure_list = []
 
         if source_hash != target_hash:
-            _set_commit_log(hexsha=target_hash, path=self.changelog_path)
+            self._set_changelog(target_hash)
 
             if executable:
                 print("Changes detected...")

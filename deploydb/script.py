@@ -222,6 +222,13 @@ INIT_DEPLOYDB = """
             Error NVARCHAR(2000),
             INDEX IX_Deploydb_ExecutionLog_CommitHexSHA_Folder (CommitHexSHA, Folder)
         );
+
+    IF OBJECT_ID('Deploydb.ChangeLog', 'U') IS NULL
+        CREATE TABLE Deploydb.ChangeLog (
+            RowId INT IDENTITY,
+            CreatedAt DATETIME CONSTRAINT DF_Deploydb_ChangeLog_CreatedAt DEFAULT(GETDATE()),
+            CommitHexSHA VARCHAR(64) CONSTRAINT PK_Deploydb_ChangeLog_CommitHexSHA PRIMARY KEY CLUSTERED
+        );
 """
 
 EXECUTION_LOG_INSERT = """
@@ -229,6 +236,14 @@ EXECUTION_LOG_INSERT = """
     VALUES (?,?,?,?);
 """
 
+CHANGELOG_INSERT = """
+    INSERT INTO Deploydb.ChangeLog (CommitHexSHA) VALUES (?);
+"""
+
 DUPLICATE_CONTROL = """
     SELECT 1 FROM Deploydb.ExecutionLog WHERE CommitHexSHA = ? AND Folder = ?
+"""
+
+LAST_CHANGELOG_SHA = """
+    SELECT TOP 1 CommitHexSHA FROM Deploydb.ChangeLog ORDER BY RowId DESC
 """
